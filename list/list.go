@@ -24,6 +24,14 @@ type Cache struct {
 	mu    sync.RWMutex
 }
 
+func WaitForExpire(c *Cache, key any, ttl time.Duration) {
+	select {
+	case <-time.After(ttl):
+		c.Remove(key)
+		return
+	}
+}
+
 func NewCache(cap int) *Cache {
 	return &Cache{
 		cap:   cap,
@@ -74,6 +82,12 @@ func (c *Cache) Add(key, value any) {
 	c.items[key] = elem
 }
 
+func (c *Cache) AddWithTTL(key any, value any, ttl time.Duration) {
+	c.Add(key, value)
+	go WaitForExpire(c, key, ttl)
+
+}
+
 func (c *Cache) Get(key any) (value any, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -95,25 +109,20 @@ func (c *Cache) Remove(key any) {
 
 func main() {
 	cache := NewCache(3)
-	wg := sync.WaitGroup{}
-
-	wg.Add(2)
 	go func() {
-		defer wg.Done()
-		cache.Add("one", 1)
-		cache.Add("two", 2)
-		cache.Add("three", 3)
-		cache.Add("one", 5)
-
+		cache.AddWithTTL("one", 1, 17*time.Second)
+		cache.AddWithTTL("two", 2, 16*time.Second)
+		cache.AddWithTTL("three", 3, 1*time.Second)
+		cache.Add("two", 6)
 	}()
 
 	go func() {
-		defer wg.Done()
-		cache.Get("two")
 		cache.Get("one")
-		cache.Remove("three")
+		cache.Get("two")
+		cache.Get("three")
 	}()
-	wg.Wait()
+
+	time.Sleep(2 * time.Second)
 	for k, v := range cache.items {
 		fmt.Printf("k: %d, v: %d ", k, v.Value)
 	}
