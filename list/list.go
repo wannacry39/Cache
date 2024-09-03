@@ -36,77 +36,86 @@ func NewCache(cap int) *Cache {
 func (c *Cache) Cap() int {
 	return c.cap
 }
+
 func (c *Cache) Len() int {
-	return c.list.Len()
+	c.mu.RLock()
+	length := c.list.Len()
+	c.mu.RUnlock()
+	return length
 }
 
 func (c *Cache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.items = make(map[any]*list.Element)
 	c.list.Init()
 }
 
 func (c *Cache) Add(key, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if val, ok := c.items[key]; ok {
-		c.items[key] = c.list.InsertAfter(value, val)
-		c.list.Remove(c.items[key].Prev())
+		c.list.MoveToFront(val)
+		val.Value = value
 		return
 	}
-	if c.Cap() <= c.Len() {
+	if c.list.Len() >= c.cap {
+		backElem := c.list.Back()
 		for k, v := range c.items {
-			if v == c.list.Back() {
+			if v == backElem {
 				delete(c.items, k)
 				c.list.Remove(v)
-				c.items[key] = c.list.PushBack(value)
-				return
+				break
 			}
 		}
-	}
 
-	c.items[key] = c.list.PushBack(value)
-	return
+	}
+	elem := c.list.PushFront(value)
+	c.items[key] = elem
 }
 
 func (c *Cache) Get(key any) (value any, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if val, ok := c.items[key]; ok {
-		data := c.list.Remove(val)
-		c.list.PushFront(data)
-		return data, true
+		c.list.MoveToFront(val)
+		return val.Value, true
 	}
 	return nil, false
 }
 
 func (c *Cache) Remove(key any) {
-	if _, ok := c.items[key]; !ok {
-		return
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if val, ok := c.items[key]; ok {
+		c.list.Remove(val)
+		delete(c.items, key)
 	}
-	c.list.Remove(c.items[key])
-	delete(c.items, key)
 }
 
 func main() {
-
 	cache := NewCache(3)
+	wg := sync.WaitGroup{}
 
-	cache.Add("one", 1)
-	cache.Add("two", 2)
-	cache.Add("three", 3)
-	cache.Add("four", 4)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		cache.Add("one", 1)
+		cache.Add("two", 2)
+		cache.Add("three", 3)
+		cache.Add("one", 5)
 
+	}()
+
+	go func() {
+		defer wg.Done()
+		cache.Get("two")
+		cache.Get("one")
+		cache.Remove("three")
+	}()
+	wg.Wait()
 	for k, v := range cache.items {
-		fmt.Printf("k: %s, v: %d ", k, v.Value)
-	}
-	fmt.Println()
-
-	for e := cache.list.Front(); e != nil; e = e.Next() {
-		fmt.Printf("%d ", e.Value)
-	}
-
-	cache.Get("two")
-	cache.Remove("one")
-
-	fmt.Println()
-	for k, v := range cache.items {
-		fmt.Printf("k: %s, v: %d ", k, v.Value)
+		fmt.Printf("k: %d, v: %d ", k, v.Value)
 	}
 	fmt.Println()
 
