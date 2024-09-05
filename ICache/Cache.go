@@ -1,4 +1,4 @@
-package cache
+package ICache
 
 import (
 	"container/list"
@@ -119,7 +119,7 @@ func (c *Cache) Get(key any) (value any, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if val, ok := c.items[key]; ok {
-		if time.Now().Before(val.ExpireAt) || !val.HasTTL {
+		if time.Now().Before(val.ExpireAt) || !val.HasTTL { // true при условии, если ttl еще не прошло либо если флаг элемента HasTTL выставлен в false
 			c.list.MoveToFront(val.ListElem)
 			return val.ListElem.Value, true
 		}
@@ -137,14 +137,14 @@ func (c *Cache) Remove(key any) {
 	}
 }
 
-func Cleaning(c *Cache) {
-	ticker := time.NewTicker(5 * time.Second)
+func Cleaning(c *Cache) { //функция очистки кэша от истекших значений
+	ticker := time.NewTicker(time.Minute)
 	ExpiredItems := []any{}
 	for {
 		<-ticker.C
 		c.mu.RLock()
 		for k, v := range c.items {
-			if time.Now().After(v.ExpireAt) && v.HasTTL {
+			if time.Now().After(v.ExpireAt) && v.HasTTL { // true при условии, что и ttl уже прошло и флаг HasTTL выставлен в true
 				ExpiredItems = append(ExpiredItems, k)
 			}
 		}
